@@ -32,7 +32,7 @@ spec:
             - name: ALLOWED_ORIGINS
               value: "PLACEHOLDER_CLOUDFRONT_ORIGIN"
             - name: COOKIE_DOMAINS
-              value: "localhost"
+              value: "d2md6n9b2v8rza.cloudfront.net"
             - name: SECURE_COOKIE
               value: "true"
             - name: JWT_EXPIRATION_HOURS
