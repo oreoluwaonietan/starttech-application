@@ -1,0 +1,63 @@
+name: Backend CI/CD
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'backend/**'
+      - 'k8s/**'
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push Docker image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build -t $ECR_REGISTRY/starttech-backend-api:$IMAGE_TAG ./backend
+          docker push $ECR_REGISTRY/starttech-backend-api:$IMAGE_TAG
+
+      - name: Scan image with Trivy
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ steps.login-ecr.outputs.registry }}/starttech-backend-api:${{ github.sha }}
+          format: table
+          exit-code: 0
+
+      - name: Update kubeconfig
+        run: aws eks update-kubeconfig --name starttech-cluster --region ${{ secrets.AWS_REGION }}
+
+      - name: Update deployment image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          sed -i "s|PLACEHOLDER_IMAGE|$ECR_REGISTRY/starttech-backend-api:$IMAGE_TAG|g" k8s/deployment.yaml
+
+      - name: Deploy to EKS
+        run: kubectl apply -f k8s/
+
+      - name: Verify rollout
+        run: kubectl rollout status deployment/backend-api --timeout=300s
